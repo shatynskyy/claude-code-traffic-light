@@ -10,19 +10,40 @@ light — floating on your desktop and mirrored in the menu bar.
 | 🟢 Green | `done` | Claude finished its turn |
 | ⚪ Grey | `idle` | No active session |
 
+## Install (no terminal needed)
+
+1. **Download** `ClaudeTrafficLight.zip` from the [Releases](../../releases) page and unzip it.
+2. **Move** `ClaudeTrafficLight.app` to `/Applications` (optional but recommended).
+3. **Open it.** Because the app isn't signed with a paid Apple Developer ID,
+   macOS blocks it the first time. To allow it (all with the mouse, no terminal):
+   double-click → **System Settings → Privacy & Security → Open Anyway** → confirm.
+4. Click the **Claude icon in the menu bar → Install Hooks**. This wires the
+   widget into Claude Code.
+5. **Fully restart Claude Code** so it picks up the hooks.
+
+That's it — start a Claude Code session and the light will react.
+
+### Menu options
+
+- **Size** — Small / Medium / Large
+- **Launch at Login** — start the widget automatically after you log in
+- **Install / Reinstall Hooks** — set up (or repair) the Claude Code integration
+- **Show / Hide Widget** — toggle the desktop light
+- **Quit**
+
 ## How it works
 
-Claude Code can run shell commands on lifecycle **hooks**. This project wires a
-tiny script (`traffic-light.sh`) to those hooks; the script writes the current
-state to `~/.claude/status.json`, and the app watches that file and colours the
-light.
+Claude Code can run shell commands on lifecycle **hooks**. "Install Hooks" adds a
+tiny script (`~/.claude/traffic-light.sh`) to those hooks; the script writes the
+current state to `~/.claude/status.json`, and the app watches that file and
+colours the light.
 
 ```
-Claude Code  ──(hook fires)──▶  traffic-light.sh  ──writes──▶  ~/.claude/status.json
-                                                                      │
-                                                        app watches file (FSEvents + poll)
-                                                                      ▼
-                                                        traffic light (desktop + menu bar)
+Claude Code ──(hook fires)──▶ ~/.claude/traffic-light.sh ──writes──▶ ~/.claude/status.json
+                                                                             │
+                                                             app watches file (FSEvents + poll)
+                                                                             ▼
+                                                             traffic light (desktop + menu bar)
 ```
 
 Hook → state mapping:
@@ -40,56 +61,38 @@ appears if the wait lasts longer than ~0.5 s. Fast auto-approved commands never
 flash red — only real Allow/Deny prompts and questions (which block until you
 act) turn the light red.
 
-> Note: some Claude Code setups don't fire the `Notification` hook on Allow/Deny
-> prompts, which is why the red state is driven by `PreToolUse` + debounce
-> rather than `Notification`.
+## Build from source (alternative)
 
-## Setup
-
-### 1. Wire up the hooks
+If you'd rather build it yourself:
 
 ```bash
-./scripts/install-hooks.sh
+# 1) wire up the hooks (or use the in-app "Install Hooks" button later)
+./scripts/install-hooks.sh   # then fully restart Claude Code
+
+# 2) build
+xcodebuild -project ClaudeTrafficLight.xcodeproj -scheme ClaudeTrafficLight -configuration Release build
 ```
 
-This copies `traffic-light.sh` into `~/.claude/` and merges the hooks into
-`~/.claude/settings.json` (your existing hooks are preserved; re-running is
-safe). **Fully restart your Claude Code session afterwards** — hooks are only
-loaded at session start.
+Or just open `ClaudeTrafficLight.xcodeproj` in Xcode and Run. For everyday use,
+launch the built `.app` on its own rather than under the Xcode debugger.
 
-### 2. Build & run the app
+## Using it with other tools (Codex, etc.)
 
-Open `ClaudeTrafficLight.xcodeproj` in Xcode and press **Run** (⌘R).
+The app is **tool-agnostic** — it only watches `~/.claude/status.json`. Anything
+that writes `working` / `waiting` / `done` / `idle` to that file drives the
+light. To use it with another agent, point that tool's event/notification
+mechanism at `traffic-light.sh`:
 
-> Tip: for everyday use, don't keep it running under the Xcode debugger — build
-> once, then launch the built `.app` on its own (Product → Show Build Folder, or
-> copy it to `/Applications`). Running under the debugger can freeze the UI.
-
-The app is a menu-bar utility (no Dock icon). A floating traffic light appears
-in the top-right; drag it anywhere. Click the menu-bar icon for a menu:
-
-- **Size** — Small / Medium / Large
-- **Launch at Login** — start the widget automatically after you log in
-- **Show / Hide Widget** — toggle the desktop light
-- **Quit**
-
-## Installing (for people who just want to use it)
-
-This app isn't code-signed with an Apple Developer ID, so the easiest and safest
-path is to **build it yourself** (free):
-
-1. Install Xcode.
-2. Clone this repo.
-3. Run `./scripts/install-hooks.sh` and restart Claude Code.
-4. Open the project in Xcode and Run, then copy the built app to `/Applications`.
-
-If a pre-built `.app` is provided in Releases, macOS Gatekeeper will flag it as
-unsigned. To open it: right-click the app → **Open** → **Open**, or run
-`xattr -dr com.apple.quarantine /path/to/ClaudeTrafficLight.app`.
+- **Claude Code** — full lifecycle hooks (best supported; this is the default).
+- **Codex CLI** — has a `notify` program hook in its config; a small adapter can
+  translate its events into `traffic-light.sh working|waiting|done`.
+- **Others** (Cursor, Aider, Gemini CLI, …) — work if the tool can run a command
+  on its events. Granularity depends on what events that tool exposes.
 
 ## Notes
 
 - The app is **not sandboxed** so it can read `~/.claude/status.json`.
 - Multiple concurrent Claude Code sessions share one status file — the most
   recent event wins.
-- Requires macOS 14+.
+- The menu-bar mark reuses the installed Claude app's tray icon if present,
+  otherwise it draws its own. Requires macOS 14+.

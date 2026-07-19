@@ -79,6 +79,8 @@ struct MenuBarLabel: View {
 struct MenuContent: View {
     @ObservedObject var store = StatusStore.shared
     @ObservedObject var settings = WidgetSettings.shared
+    @State private var hooksInstalled = HooksInstaller.isInstalled
+    @State private var hooksNote: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -108,6 +110,18 @@ struct MenuContent: View {
 
             Divider()
 
+            Button(hooksInstalled ? "Reinstall Hooks" : "Install Hooks") {
+                installHooks()
+            }
+            if let hooksNote {
+                Text(hooksNote)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Divider()
+
             Button(settings.isVisible ? "Hide Widget" : "Show Widget") {
                 settings.isVisible.toggle()
             }
@@ -115,6 +129,16 @@ struct MenuContent: View {
         }
         .padding(14)
         .frame(width: 240)
+    }
+
+    private func installHooks() {
+        do {
+            try HooksInstaller.install()
+            hooksInstalled = true
+            hooksNote = "Installed — fully restart Claude Code."
+        } catch {
+            hooksNote = "Failed: \(error.localizedDescription)"
+        }
     }
 
     private func miniLamp(_ role: LampRole) -> some View {
