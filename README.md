@@ -77,8 +77,6 @@ xcodebuild -project ClaudeTrafficLight.xcodeproj -scheme ClaudeTrafficLight -con
 Or just open `ClaudeTrafficLight.xcodeproj` in Xcode and Run. For everyday use,
 launch the built `.app` on its own rather than under the Xcode debugger.
 
-## Using it with other tools (Codex, etc.)
-
 The app is **tool-agnostic** — it only watches `~/.claude/status/`. Anything
 that writes `working` / `waiting` / `done` per session there drives the light.
 To use it with another agent, point that tool's event/notification mechanism at
