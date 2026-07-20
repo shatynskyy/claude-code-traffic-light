@@ -16,7 +16,9 @@ struct SessionInfo: Identifiable, Equatable {
 final class StatusStore: ObservableObject {
     static let shared = StatusStore()
 
-    @Published private(set) var state: LightState = .idle
+    @Published private(set) var state: LightState = .idle {
+        didSet { if state != oldValue { writeStateFile() } }
+    }
     @Published private(set) var sessions: [SessionInfo] = []
 
     private let dir = FileManager.default
@@ -25,6 +27,14 @@ final class StatusStore: ObservableObject {
     private var pollTimer: Timer?
     private var pendingWaiting: DispatchWorkItem?
     private let transcripts = TranscriptReader()
+
+    /// Raw (pre-decay) state of each session on the previous poll, used to
+    /// detect a real hook-written completion (working/waiting → done).
+    private var prevRawStates: [String: LightState] = [:]
+    /// While set, a session just finished: show green over yellow (never over
+    /// red) so a completion is noticeable even when other sessions still work.
+    private var flashUntil: TimeInterval = 0
+    private let flashDuration: TimeInterval = 2.5
 
     /// A "waiting" (red) aggregate only surfaces if it lasts longer than this,
     /// so normal tool execution (which fires PreToolUse→waiting) doesn't flash
@@ -57,6 +67,7 @@ final class StatusStore: ObservableObject {
     private func recompute() {
         let now = Date().timeIntervalSince1970
         var list: [SessionInfo] = []
+        var rawStates: [String: LightState] = [:]
 
         if let files = try? FileManager.default.contentsOfDirectory(
             at: dir, includingPropertiesForKeys: nil) {
@@ -91,6 +102,11 @@ final class StatusStore: ObservableObject {
                 let folder = cwd.isEmpty ? "session" : (cwd as NSString).lastPathComponent
                 let title = (tTitle?.isEmpty == false) ? tTitle! : folder
                 let sid = (obj["session"] as? String) ?? file.deletingPathExtension().lastPathComponent
+                rawStates[sid] = LightState(rawValue: raw)
+                // A real hook-written completion (not a decay) → green flash.
+                if raw == "done", let prev = prevRawStates[sid], prev == .working || prev == .waiting {
+                    flashUntil = now + flashDuration
+                }
                 list.append(SessionInfo(id: sid, state: st, title: title, ts: ts))
             }
         }
@@ -100,12 +116,16 @@ final class StatusStore: ObservableObject {
             return a.ts > b.ts
         }
         if list != sessions { sessions = list }
+        prevRawStates = rawStates
 
-        let aggregate: LightState
+        var aggregate: LightState
         if list.contains(where: { $0.state == .waiting }) { aggregate = .waiting }
         else if list.contains(where: { $0.state == .working }) { aggregate = .working }
         else if list.contains(where: { $0.state == .done }) { aggregate = .done }
         else { aggregate = .idle }
+
+        // Completion flash: briefly show green over yellow (never over red).
+        if aggregate == .working, now < flashUntil { aggregate = .done }
         apply(aggregate)
     }
 
@@ -126,6 +146,17 @@ final class StatusStore: ObservableObject {
               let mtime = (attrs[.modificationDate] as? Date)?.timeIntervalSince1970
         else { return true }
         return now - mtime > seconds
+    }
+
+    /// Mirrors the currently shown light to `~/.claude/traffic-light-state.json`
+    /// so external tools (and our own tests) can observe what the widget shows.
+    private func writeStateFile() {
+        let url = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/traffic-light-state.json")
+        let payload = ["state": state.rawValue, "ts": String(Int(Date().timeIntervalSince1970))]
+        if let data = try? JSONSerialization.data(withJSONObject: payload) {
+            try? data.write(to: url, options: .atomic)
+        }
     }
 
     private func apply(_ newState: LightState) {
