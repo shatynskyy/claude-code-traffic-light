@@ -9,24 +9,41 @@ enum HooksInstaller {
     private static let scriptURL = claudeDir.appendingPathComponent("traffic-light.sh")
     private static let settingsURL = claudeDir.appendingPathComponent("settings.json")
 
-    /// Which lifecycle event maps to which state.
+    /// Which lifecycle event maps to which state (`end` removes the session).
     private static let mapping: [(event: String, state: String)] = [
         ("UserPromptSubmit", "working"),
         ("PreToolUse", "waiting"),
         ("PostToolUse", "working"),
         ("Notification", "waiting"),
         ("Stop", "done"),
+        ("SessionEnd", "end"),
     ]
 
-    private static let scriptBody = """
+    private static let scriptBody = #"""
     #!/bin/bash
-    # Writes the current Claude Code status for the traffic-light widget.
+    # Writes per-session Claude Code status for the traffic-light widget.
+    # Usage: traffic-light.sh <working|waiting|done|idle|end>
+    # Claude Code passes the hook JSON (with session_id, cwd) on stdin.
     STATE="${1:-idle}"
-    DIR="$HOME/.claude"
+    DIR="$HOME/.claude/status"
     mkdir -p "$DIR"
-    printf '{"state":"%s","ts":%s}\\n' "$STATE" "$(date +%s)" > "$DIR/status.json"
 
-    """
+    if [ -t 0 ]; then INPUT=""; else INPUT="$(cat)"; fi
+    SID="$(printf '%s' "$INPUT" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+    CWD="$(printf '%s' "$INPUT" | sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+    [ -z "$SID" ] && SID="default"
+    SAFE="$(printf '%s' "$SID" | tr -c 'A-Za-z0-9._-' '_')"
+    [ -z "$SAFE" ] && SAFE="default"
+    FILE="$DIR/$SAFE.json"
+
+    if [ "$STATE" = "end" ]; then
+      rm -f "$FILE"
+      exit 0
+    fi
+
+    printf '{"state":"%s","ts":%s,"cwd":"%s","session":"%s"}\n' "$STATE" "$(date +%s)" "$CWD" "$SID" > "$FILE"
+
+    """#
 
     static var isInstalled: Bool {
         guard FileManager.default.fileExists(atPath: scriptURL.path),

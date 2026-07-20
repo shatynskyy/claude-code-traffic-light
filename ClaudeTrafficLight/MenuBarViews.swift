@@ -95,6 +95,21 @@ struct MenuContent: View {
                 miniLamp(.green)
             }
 
+            if !store.sessions.isEmpty {
+                Divider()
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(store.sessions) { session in
+                        HStack(spacing: 8) {
+                            Circle().fill(session.state.accent).frame(width: 8, height: 8)
+                            Text(session.project).lineLimit(1).truncationMode(.middle)
+                            Spacer(minLength: 8)
+                            Text(session.state.title).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .font(.callout)
+            }
+
             Divider()
 
             Picker("Size", selection: $settings.size) {

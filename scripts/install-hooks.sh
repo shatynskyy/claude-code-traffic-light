@@ -25,14 +25,15 @@ if os.path.exists(path):
         data = {}
 
 hooks = data.setdefault("hooks", {})
-# Which state each lifecycle event maps to:
-#   working  -> yellow   waiting -> red   done -> green
+# Lifecycle event -> state the widget should show.
+#   working -> yellow   waiting -> red   done -> green   end -> remove session
 mapping = {
-    "UserPromptSubmit": "working",  # you sent a prompt, Claude starts working
-    "PreToolUse":       "waiting",  # about to use a tool (may need Allow/Deny or a choice)
-    "PostToolUse":      "working",  # tool finished, back to working
-    "Notification":     "waiting",  # Claude is waiting for you (idle / permission)
-    "Stop":             "done",     # Claude finished its turn
+    "UserPromptSubmit": "working",
+    "PreToolUse":       "waiting",
+    "PostToolUse":      "working",
+    "Notification":     "waiting",
+    "Stop":             "done",
+    "SessionEnd":       "end",
 }
 
 for event, state in mapping.items():

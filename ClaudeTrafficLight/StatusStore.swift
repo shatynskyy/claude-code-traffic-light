@@ -1,92 +1,92 @@
 import Foundation
 import Combine
 
-/// Watches `~/.claude/status.json` (written by Claude Code hooks) and publishes
-/// the current `LightState`. Uses a filesystem event source with a polling
-/// fallback so it survives the file being replaced or created after launch.
+/// One live Claude Code session's status.
+struct SessionInfo: Identifiable, Equatable {
+    let id: String
+    let state: LightState
+    let project: String
+    let ts: Int
+}
+
+/// Watches `~/.claude/status/` (one JSON file per Claude Code session, written
+/// by the hooks) and publishes an aggregate `LightState` plus the per-session
+/// list. Aggregation priority: waiting (red) > working (yellow) > done (green).
 @MainActor
 final class StatusStore: ObservableObject {
     static let shared = StatusStore()
 
     @Published private(set) var state: LightState = .idle
+    @Published private(set) var sessions: [SessionInfo] = []
 
-    private let url = FileManager.default
-        .homeDirectoryForCurrentUser
-        .appendingPathComponent(".claude/status.json")
+    private let dir = FileManager.default
+        .homeDirectoryForCurrentUser.appendingPathComponent(".claude/status")
 
-    private var source: DispatchSourceFileSystemObject?
-    private var fd: Int32 = -1
     private var pollTimer: Timer?
     private var pendingWaiting: DispatchWorkItem?
 
-    /// A "waiting" (red) state only surfaces if it lasts longer than this, so
-    /// fast auto-approved commands don't flash red — only real Allow/Deny
-    /// prompts and choose-an-option questions do.
+    /// A "waiting" (red) aggregate only surfaces if it lasts longer than this,
+    /// so fast auto-approved commands don't flash red.
     private let waitingDebounce: TimeInterval = 0.5
 
+    /// Sessions with no update for longer than this are treated as dead
+    /// (covers crashes / killed terminals where SessionEnd never fired).
+    private let staleAfter: TimeInterval = 1800 // 30 min
+
     private init() {
-        read()
-        startWatching()
-        startPolling()
-    }
-
-    private func startWatching() {
-        stopWatching()
-        fd = open(url.path, O_EVTONLY)
-        guard fd >= 0 else { return } // file may not exist yet — polling will retry
-
-        let src = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fd,
-            eventMask: [.write, .extend, .delete, .rename],
-            queue: .global()
-        )
-        src.setEventHandler { [weak self] in
-            guard let self else { return }
-            let flags = src.data
-            Task { @MainActor in
-                self.read()
-                if flags.contains(.delete) || flags.contains(.rename) {
-                    self.startWatching() // reopen on atomic replace
-                }
-            }
-        }
-        src.setCancelHandler { [weak self] in
-            guard let self, self.fd >= 0 else { return }
-            close(self.fd)
-            self.fd = -1
-        }
-        source = src
-        src.resume()
-    }
-
-    private func stopWatching() {
-        source?.cancel()
-        source = nil
-    }
-
-    private func startPolling() {
+        recompute()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self else { return }
-                if self.fd < 0 { self.startWatching() }
-                self.read()
-            }
+            Task { @MainActor in self?.recompute() }
         }
     }
 
-    private func read() {
-        guard let data = try? Data(contentsOf: url) else { return }
-        struct Payload: Decodable { let state: String }
-        guard
-            let payload = try? JSONDecoder().decode(Payload.self, from: data),
-            let newState = LightState(rawValue: payload.state)
-        else { return }
-        apply(newState)
+    private func recompute() {
+        let now = Date().timeIntervalSince1970
+        var list: [SessionInfo] = []
+
+        if let files = try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: nil) {
+            for file in files where file.pathExtension == "json" {
+                guard
+                    let data = try? Data(contentsOf: file),
+                    let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                    let raw = obj["state"] as? String,
+                    let st = LightState(rawValue: raw),
+                    let ts = obj["ts"] as? Int,
+                    now - Double(ts) <= staleAfter
+                else { continue }
+                let cwd = (obj["cwd"] as? String) ?? ""
+                let project = cwd.isEmpty ? "session" : (cwd as NSString).lastPathComponent
+                let sid = (obj["session"] as? String) ?? file.deletingPathExtension().lastPathComponent
+                list.append(SessionInfo(id: sid, state: st, project: project, ts: ts))
+            }
+        }
+
+        list.sort { a, b in
+            if rank(a.state) != rank(b.state) { return rank(a.state) < rank(b.state) }
+            return a.ts > b.ts
+        }
+        if list != sessions { sessions = list }
+
+        let aggregate: LightState
+        if list.contains(where: { $0.state == .waiting }) { aggregate = .waiting }
+        else if list.contains(where: { $0.state == .working }) { aggregate = .working }
+        else if list.contains(where: { $0.state == .done }) { aggregate = .done }
+        else { aggregate = .idle }
+        apply(aggregate)
+    }
+
+    private func rank(_ s: LightState) -> Int {
+        switch s {
+        case .waiting: return 0
+        case .working: return 1
+        case .done:    return 2
+        case .idle:    return 3
+        }
     }
 
     private func apply(_ newState: LightState) {
         if newState == .waiting {
-            // Debounce: surface red only if it persists (real prompt / question).
             guard state != .waiting, pendingWaiting == nil else { return }
             let work = DispatchWorkItem { [weak self] in
                 self?.state = .waiting
