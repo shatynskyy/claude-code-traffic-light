@@ -11,18 +11,21 @@ cp "$SRC_DIR/traffic-light.sh" "$CLAUDE_DIR/traffic-light.sh"
 chmod +x "$CLAUDE_DIR/traffic-light.sh"
 
 python3 - "$CLAUDE_DIR/settings.json" <<'PY'
-import json, os, sys
+import json, os, shutil, sys
 
 path = sys.argv[1]
 cmd = os.path.expanduser("~/.claude/traffic-light.sh")
 
 data = {}
 if os.path.exists(path):
+    # Refuse to touch a malformed settings.json rather than wiping it.
     try:
         with open(path) as f:
             data = json.load(f)
     except Exception:
-        data = {}
+        sys.exit(f"ERROR: {path} is not valid JSON — fix or remove it, then re-run. Nothing was changed.")
+    # Keep a restore point before modifying the file.
+    shutil.copyfile(path, path + ".backup")
 
 hooks = data.setdefault("hooks", {})
 # Lifecycle event -> state the widget should show.

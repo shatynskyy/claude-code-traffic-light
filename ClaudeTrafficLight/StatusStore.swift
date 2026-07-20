@@ -5,7 +5,7 @@ import Combine
 struct SessionInfo: Identifiable, Equatable {
     let id: String
     let state: LightState
-    let project: String
+    let title: String
     let ts: Int
 }
 
@@ -24,14 +24,28 @@ final class StatusStore: ObservableObject {
 
     private var pollTimer: Timer?
     private var pendingWaiting: DispatchWorkItem?
+    private let transcripts = TranscriptReader()
 
     /// A "waiting" (red) aggregate only surfaces if it lasts longer than this,
-    /// so fast auto-approved commands don't flash red.
-    private let waitingDebounce: TimeInterval = 0.5
+    /// so normal tool execution (which fires PreToolUse→waiting) doesn't flash
+    /// red — only a real Allow/Deny prompt, which you take seconds to answer.
+    private let waitingDebounce: TimeInterval = 1.0
 
     /// Sessions with no update for longer than this are treated as dead
     /// (covers crashes / killed terminals where SessionEnd never fired).
     private let staleAfter: TimeInterval = 1800 // 30 min
+
+    /// Yellow (working) can get stuck if you interrupt Claude (no Stop hook
+    /// fires). Clear it only once the session is truly idle: no hook AND the
+    /// transcript has been quiet this long. Red (waiting) is intentionally left
+    /// as-is — a real Allow/Deny prompt must stay red until resolved.
+    private let workingDecay: TimeInterval = 60
+
+    /// Trust the transcript's interrupt marker only after the session has been
+    /// quiet this long — avoids a race where a just-submitted prompt fires
+    /// `working` before the new prompt is written to the transcript (which would
+    /// briefly still show the previous "[Request interrupted]" as the last line).
+    private let interruptGrace: TimeInterval = 5
 
     private init() {
         recompute()
@@ -51,14 +65,33 @@ final class StatusStore: ObservableObject {
                     let data = try? Data(contentsOf: file),
                     let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                     let raw = obj["state"] as? String,
-                    let st = LightState(rawValue: raw),
+                    var st = LightState(rawValue: raw),
                     let ts = obj["ts"] as? Int,
                     now - Double(ts) <= staleAfter
                 else { continue }
+
+                let transcript = obj["transcript"] as? String
+                let (tTitle, interrupted) = transcripts.read(transcript)
+
+                // Yellow can get stuck when you interrupt Claude (no Stop hook).
+                // Clear it instantly if the transcript shows the interrupt marker,
+                // otherwise fall back to "idle for a while". Red (waiting) is left
+                // as-is on purpose — a real Allow/Deny must stay red.
+                let age = now - Double(ts)
+                if st == .working {
+                    if interrupted, age > interruptGrace {
+                        st = .done
+                    } else if age > workingDecay,
+                              transcriptIdle(transcript, now: now, longerThan: workingDecay) {
+                        st = .done
+                    }
+                }
+
                 let cwd = (obj["cwd"] as? String) ?? ""
-                let project = cwd.isEmpty ? "session" : (cwd as NSString).lastPathComponent
+                let folder = cwd.isEmpty ? "session" : (cwd as NSString).lastPathComponent
+                let title = (tTitle?.isEmpty == false) ? tTitle! : folder
                 let sid = (obj["session"] as? String) ?? file.deletingPathExtension().lastPathComponent
-                list.append(SessionInfo(id: sid, state: st, project: project, ts: ts))
+                list.append(SessionInfo(id: sid, state: st, title: title, ts: ts))
             }
         }
 
@@ -83,6 +116,16 @@ final class StatusStore: ObservableObject {
         case .done:    return 2
         case .idle:    return 3
         }
+    }
+
+    /// True if the session's transcript hasn't been written for `seconds`
+    /// (or we have no transcript path) — i.e. Claude isn't actively producing.
+    private func transcriptIdle(_ path: String?, now: TimeInterval, longerThan seconds: TimeInterval) -> Bool {
+        guard let path, !path.isEmpty,
+              let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+              let mtime = (attrs[.modificationDate] as? Date)?.timeIntervalSince1970
+        else { return true }
+        return now - mtime > seconds
     }
 
     private func apply(_ newState: LightState) {

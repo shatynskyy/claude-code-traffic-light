@@ -101,7 +101,7 @@ struct MenuContent: View {
                     ForEach(store.sessions) { session in
                         HStack(spacing: 8) {
                             Circle().fill(session.state.accent).frame(width: 8, height: 8)
-                            Text(session.project).lineLimit(1).truncationMode(.middle)
+                            Text(session.title).lineLimit(1).truncationMode(.tail)
                             Spacer(minLength: 8)
                             Text(session.state.title).foregroundStyle(.secondary)
                         }

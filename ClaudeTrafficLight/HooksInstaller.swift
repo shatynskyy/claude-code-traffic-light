@@ -23,7 +23,7 @@ enum HooksInstaller {
     #!/bin/bash
     # Writes per-session Claude Code status for the traffic-light widget.
     # Usage: traffic-light.sh <working|waiting|done|idle|end>
-    # Claude Code passes the hook JSON (with session_id, cwd) on stdin.
+    # Claude Code passes the hook JSON (session_id, cwd, transcript_path) on stdin.
     STATE="${1:-idle}"
     DIR="$HOME/.claude/status"
     mkdir -p "$DIR"
@@ -31,6 +31,7 @@ enum HooksInstaller {
     if [ -t 0 ]; then INPUT=""; else INPUT="$(cat)"; fi
     SID="$(printf '%s' "$INPUT" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
     CWD="$(printf '%s' "$INPUT" | sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+    TR="$(printf '%s' "$INPUT" | sed -n 's/.*"transcript_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
     [ -z "$SID" ] && SID="default"
     SAFE="$(printf '%s' "$SID" | tr -c 'A-Za-z0-9._-' '_')"
     [ -z "$SAFE" ] && SAFE="default"
@@ -41,9 +42,19 @@ enum HooksInstaller {
       exit 0
     fi
 
-    printf '{"state":"%s","ts":%s,"cwd":"%s","session":"%s"}\n' "$STATE" "$(date +%s)" "$CWD" "$SID" > "$FILE"
+    # Atomic write (tmp + rename) so the app never reads a truncated file.
+    TMP="$FILE.$$.tmp"
+    printf '{"state":"%s","ts":%s,"cwd":"%s","session":"%s","transcript":"%s"}\n' \
+      "$STATE" "$(date +%s)" "$CWD" "$SID" "$TR" > "$TMP" && mv "$TMP" "$FILE"
 
     """#
+
+    enum InstallError: LocalizedError {
+        case malformedSettings
+        var errorDescription: String? {
+            "~/.claude/settings.json is not valid JSON — fix or remove it, then retry. Nothing was changed."
+        }
+    }
 
     static var isInstalled: Bool {
         guard FileManager.default.fileExists(atPath: scriptURL.path),
@@ -58,14 +69,23 @@ enum HooksInstaller {
 
     static func install() throws {
         try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+
+        // If settings.json exists but is unreadable, REFUSE rather than silently
+        // rewriting it with hooks only (that would wipe the user's config).
+        var root: [String: Any] = [:]
+        if let data = try? Data(contentsOf: settingsURL) {
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw InstallError.malformedSettings
+            }
+            root = json
+            // Keep a restore point before we modify the file.
+            let backupURL = claudeDir.appendingPathComponent("settings.json.backup")
+            try? FileManager.default.removeItem(at: backupURL)
+            try? FileManager.default.copyItem(at: settingsURL, to: backupURL)
+        }
+
         try scriptBody.write(to: scriptURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
-
-        var root: [String: Any] = [:]
-        if let data = try? Data(contentsOf: settingsURL),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            root = json
-        }
         var hooks = (root["hooks"] as? [String: Any]) ?? [:]
         let cmd = scriptURL.path
 
