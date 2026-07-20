@@ -84,12 +84,6 @@ that writes `working` / `waiting` / `done` per session there drives the light.
 To use it with another agent, point that tool's event/notification mechanism at
 `traffic-light.sh`:
 
-- **Claude Code** — full lifecycle hooks (best supported; this is the default).
-- **Codex CLI** — has a `notify` program hook in its config; a small adapter can
-  translate its events into `traffic-light.sh working|waiting|done`.
-- **Others** (Cursor, Aider, Gemini CLI, …) — work if the tool can run a command
-  on its events. Granularity depends on what events that tool exposes.
-
 ## Notes
 
 - The app is **not sandboxed** so it can read `~/.claude/status/`.
