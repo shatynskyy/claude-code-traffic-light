@@ -3,6 +3,12 @@
 A tiny macOS widget that shows what Claude Code is doing right now as a traffic
 light — floating on your desktop and mirrored in the menu bar.
 
+<p align="center">
+  <img src="docs/yellow.png" width="130" alt="Yellow — Claude is working" />
+  <img src="docs/red.png" width="130" alt="Red — Claude needs your input" />
+  <img src="docs/green.png" width="130" alt="Green — Claude finished" />
+</p>
+
 | Colour | State | Meaning |
 | --- | --- | --- |
 | 🟡 Yellow | `working` | Claude is working (thinking, running tools) |
