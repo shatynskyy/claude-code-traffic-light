@@ -28,6 +28,8 @@ That's it — start a Claude Code session and the light will react.
 - **Size** — Small / Medium / Large
 - **Launch at Login** — start the widget automatically after you log in
 - **Install / Reinstall Hooks** — set up (or repair) the Claude Code integration
+- **Uninstall Hooks** — remove everything the app added (your own hooks and
+  settings are left untouched); after that you can simply delete the app
 - **Show / Hide Widget** — toggle the desktop light
 - **Quit**
 
@@ -72,6 +74,9 @@ If you'd rather build it yourself:
 
 # 2) build
 xcodebuild -project ClaudeTrafficLight.xcodeproj -scheme ClaudeTrafficLight -configuration Release build
+
+# to remove everything later (also available as a menu button):
+./scripts/uninstall-hooks.sh
 ```
 
 Or just open `ClaudeTrafficLight.xcodeproj` in Xcode and Run. For everyday use,

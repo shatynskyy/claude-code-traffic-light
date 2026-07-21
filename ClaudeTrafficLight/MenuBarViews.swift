@@ -128,6 +128,9 @@ struct MenuContent: View {
             Button(hooksInstalled ? "Reinstall Hooks" : "Install Hooks") {
                 installHooks()
             }
+            if hooksInstalled {
+                Button("Uninstall Hooks") { uninstallHooks() }
+            }
             if let hooksNote {
                 Text(hooksNote)
                     .font(.caption)
@@ -151,6 +154,16 @@ struct MenuContent: View {
             try HooksInstaller.install()
             hooksInstalled = true
             hooksNote = "Installed — fully restart Claude Code."
+        } catch {
+            hooksNote = "Failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func uninstallHooks() {
+        do {
+            try HooksInstaller.uninstall()
+            hooksInstalled = false
+            hooksNote = "Uninstalled — restart Claude Code. You can now delete the app."
         } catch {
             hooksNote = "Failed: \(error.localizedDescription)"
         }

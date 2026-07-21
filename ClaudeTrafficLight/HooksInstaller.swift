@@ -103,4 +103,34 @@ enum HooksInstaller {
         let out = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted])
         try out.write(to: settingsURL, options: .atomic)
     }
+
+    /// Removes everything the installer created: our hook entries (other hooks
+    /// are left untouched), the writer script, and all status files.
+    static func uninstall() throws {
+        if let data = try? Data(contentsOf: settingsURL) {
+            guard var root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw InstallError.malformedSettings
+            }
+            let backupURL = claudeDir.appendingPathComponent("settings.json.backup")
+            try? FileManager.default.removeItem(at: backupURL)
+            try? FileManager.default.copyItem(at: settingsURL, to: backupURL)
+
+            if var hooks = root["hooks"] as? [String: Any] {
+                for (event, value) in hooks {
+                    guard let groups = value as? [[String: Any]] else { continue }
+                    let kept = groups.filter { group in
+                        let inner = (group["hooks"] as? [[String: Any]]) ?? []
+                        return !inner.contains { ($0["command"] as? String)?.contains("traffic-light.sh") ?? false }
+                    }
+                    if kept.isEmpty { hooks.removeValue(forKey: event) } else { hooks[event] = kept }
+                }
+                if hooks.isEmpty { root.removeValue(forKey: "hooks") } else { root["hooks"] = hooks }
+            }
+            let out = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted])
+            try out.write(to: settingsURL, options: .atomic)
+        }
+        try? FileManager.default.removeItem(at: scriptURL)
+        try? FileManager.default.removeItem(at: claudeDir.appendingPathComponent("status"))
+        try? FileManager.default.removeItem(at: claudeDir.appendingPathComponent("traffic-light-state.json"))
+    }
 }
