@@ -10,16 +10,19 @@ light — floating on your desktop and mirrored in the menu bar.
 | 🟢 Green | `done` | Claude finished its turn |
 | ⚪ Grey | `idle` | No active session |
 
-## Install (no terminal needed)
+## Install
 
 1. **Download** `ClaudeTrafficLight.zip` from the [Releases](../../releases) page and unzip it.
-2. **Move** `ClaudeTrafficLight.app` to `/Applications` (optional but recommended).
-3. **Open it.** Because the app isn't signed with a paid Apple Developer ID,
-   macOS blocks it the first time. To allow it (all with the mouse, no terminal):
-   double-click → **System Settings → Privacy & Security → Open Anyway** → confirm.
-4. Click the **Claude icon in the menu bar → Install Hooks**. This wires the
-   widget into Claude Code.
-5. **Fully restart Claude Code** so it picks up the hooks.
+2. **Double-click** `ClaudeTrafficLight.app` right there in Downloads — macOS will block it (the app isn't signed with a paid Apple Developer ID). Close the dialog.
+3. Open **System Settings → Privacy & Security**, scroll down → click **Open Anyway** → confirm. The app starts.
+4. Quit the app and **move** `ClaudeTrafficLight.app` to `/Applications`, then open it from there.
+5. Click the **Claude sunburst icon in the menu bar** → **Install Hooks** — this connects the widget to Claude Code.
+6. **Fully restart Claude Code.** Done — the light now reacts to your sessions.
+
+> Order matters: unblock the app **while it's still in Downloads** (steps 2–3), and only then move it to `/Applications`. Once it's there, macOS needs an extra "App Management" permission to unblock it.
+>
+> If the **Open Anyway** button doesn't appear in step 3, unblock from the terminal instead:
+> `xattr -dr com.apple.quarantine ~/Downloads/ClaudeTrafficLight.app`
 
 That's it — start a Claude Code session and the light will react.
 
