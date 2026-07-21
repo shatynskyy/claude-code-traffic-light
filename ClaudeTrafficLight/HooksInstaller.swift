@@ -14,7 +14,6 @@ enum HooksInstaller {
         ("UserPromptSubmit", "working"),
         ("PreToolUse", "waiting"),
         ("PostToolUse", "working"),
-        ("Notification", "waiting"),
         ("Stop", "done"),
         ("SessionEnd", "end"),
     ]

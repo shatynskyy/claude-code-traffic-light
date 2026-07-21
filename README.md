@@ -65,7 +65,6 @@ Hook → state mapping:
 | `PreToolUse` | Claude is about to use a tool | 🔴 waiting* |
 | `PostToolUse` | a tool finished | 🟡 working |
 | `Stop` | Claude finished its turn | 🟢 done |
-| `Notification` | Claude is idle-waiting for you | 🔴 waiting |
 | `SessionEnd` | a session ends | removes that session |
 
 \* `PreToolUse` fires for **every** tool, but the app **debounces** it: red only

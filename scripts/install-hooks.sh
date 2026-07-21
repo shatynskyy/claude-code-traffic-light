@@ -34,7 +34,6 @@ mapping = {
     "UserPromptSubmit": "working",
     "PreToolUse":       "waiting",
     "PostToolUse":      "working",
-    "Notification":     "waiting",
     "Stop":             "done",
     "SessionEnd":       "end",
 }
